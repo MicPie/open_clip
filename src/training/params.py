@@ -163,6 +163,12 @@ def parse_args():
         help="whether to aggregate features across gpus before computing the loss"
     )
     parser.add_argument(
+        "--loss-type",
+        default="CLIP",
+        type=str,
+        help="change between standard CLIP and FILIP loss type (default: CLIP)",
+    )
+    parser.add_argument(
         "--report-to",
         default='',
         type=str,
