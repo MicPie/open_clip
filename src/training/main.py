@@ -231,9 +231,6 @@ def main_worker(gpu, ngpus_per_node, log_queue, args):
 def main():
     args = parse_args()
 
-    if args.loss_type == "FILIP":
-        assert args.model == "ViT-B/32", "FILIP only works with a Transformer as image encoder."
-
     # get the name of the experiments
     if args.name is None:
         args.name = strftime(
