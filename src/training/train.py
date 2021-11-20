@@ -21,7 +21,7 @@ def is_master(args):
     return (not args.distributed) or args.gpu == 0
 
 def get_loss(model, images, texts, loss_img, loss_txt, args):
-    image_features, text_features, logit_scale = model(images, texts)
+    image_features, text_features, logit_scale = model(images, texts, args)
     logit_scale = logit_scale.mean()
     if args.distributed and args.aggregate:
         world_size = dist.get_world_size()
@@ -53,17 +53,52 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
         logits_per_text = logits_per_image.t()
 
     else:
-        logits_per_image = logit_scale * image_features @ text_features.t()
-        logits_per_text = logit_scale * text_features @ image_features.t()
+        if args.loss_type == "CLIP":
+            logits_per_image = logit_scale * image_features @ text_features.t()
+            logits_per_text = logit_scale * text_features @ image_features.t()
+#        elif args.loss_type == "FILIP":
+# See below, this needs to be implemented with top-k tokens for multi-GPU/node training.
 
-    ground_truth = torch.arange(len(logits_per_image)).long()
-    if args.gpu is not None:
-        ground_truth = ground_truth.cuda(args.gpu, non_blocking=True)
+    if args.loss_type == "CLIP":
+        ground_truth = torch.arange(len(logits_per_image)).long()
+        if args.gpu is not None:
+            ground_truth = ground_truth.cuda(args.gpu, non_blocking=True)
 
-    total_loss = (
-        loss_img(logits_per_image, ground_truth)
-        + loss_txt(logits_per_text, ground_truth)
-    ) / 2
+        total_loss = (
+            loss_img(logits_per_image, ground_truth)
+            + loss_txt(logits_per_text, ground_truth)
+        ) / 2
+    elif args.loss_type == "FILIP":
+        sim = torch.einsum("imd,tnd->itmn", image_features, text_features)
+        # TO DO: this is the position to only get the top-k tokens like outlined in the paper
+        # that can then be aggregated over GPUs/nodes
+        # and after aggregation the total sims can be caclulated as below
+        sim_image = sim.max(dim=3).values.mean(dim=2)   # itmn, max: itm, mean: it
+        sim_text  = sim.max(dim=2).values.mean(dim=2).T # itmn, max: itn, mean: it, transpose: ti
+        sim_image *= logit_scale
+        sim_text  *= logit_scale
+
+        def contrastive_loss(sim):
+            # Based on: https://github.com/HobbitLong/SupContrast/blob/master/losses.py#L11
+
+            # for numerical stability
+            logits_max, _ = torch.max(sim, dim=1, keepdim=True)
+            logits = sim - logits_max.detach()
+            
+            exp_logits = torch.exp(logits)
+            log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+
+            # compute mean of log-likelihood over positive
+            mask = torch.eye(sim.shape[0],sim.shape[1])
+            mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
+
+            loss = - (self.temperature * mean_log_prob_pos).mean()
+            return loss
+
+        loss_image = contrastive_loss(sim_image)
+        loss_text = contrastive_loss(sim_text)
+        total_loss = (loss_image + loss_text) / 2
+
     return total_loss
 
 
@@ -74,11 +109,12 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, tb_writer=None
 
     dataloader, sampler = data['train'].dataloader,  data['train'].sampler
 
-    loss_img = nn.CrossEntropyLoss()
-    loss_txt = nn.CrossEntropyLoss()
-    if args.gpu is not None:
-        loss_img = loss_img.cuda(args.gpu)
-        loss_txt = loss_txt.cuda(args.gpu)
+    if args.loss_type == "CLIP":
+        loss_img = nn.CrossEntropyLoss()
+        loss_txt = nn.CrossEntropyLoss()
+        if args.gpu is not None:
+            loss_img = loss_img.cuda(args.gpu)
+            loss_txt = loss_txt.cuda(args.gpu)
 
     if args.distributed and sampler is not None:
         sampler.set_epoch(epoch)
