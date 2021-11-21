@@ -54,7 +54,6 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
             logits_per_text = logits_per_image.t()
 
         elif args.loss_type == "FILIP":
-            # TO DO: this is the position to only get the top-k tokens like outlined in the paper
             image_features = torch.cat(gathered_image_features, dim=0)
             text_features  = torch.cat(gathered_text_features,  dim=0)
 
