@@ -93,8 +93,7 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
             mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
 
             loss = - (self.temperature * mean_log_prob_pos).mean()
-            # if we calculate the full loss on every GPU we need to divide by world_size?
-            # better calculate only parts of the loss?
+            # TO DO: Check if we need to carry out the entire calculation on every GPU or if we can split it like with the CLASP setup.
             return loss
 
         loss_image = contrastive_loss(sim_image)
