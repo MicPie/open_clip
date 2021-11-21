@@ -92,7 +92,7 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
             mask = torch.eye(sim.shape[0],sim.shape[1])
             mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
 
-            loss = - (self.temperature * mean_log_prob_pos).mean()
+            loss = - (args.cl_temperature * mean_log_prob_pos).mean()
             # TO DO: Check if we need to carry out the entire calculation on every GPU or if we can split it like with the CLASP setup.
             return loss
 

@@ -169,6 +169,12 @@ def parse_args():
         help="change between standard CLIP and FILIP loss type (default: CLIP)",
     )
     parser.add_argument(
+        "--cl-temperature",
+        default=0.07,
+        type=float,
+        help="contrastive loss temperature of the FILIP setup (default: 0.07)",
+    )
+    parser.add_argument(
         "--report-to",
         default='',
         type=str,
