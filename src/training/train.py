@@ -89,7 +89,7 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
             log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
 
             # compute mean of log-likelihood over positive
-            mask = torch.eye(sim.shape[0],sim.shape[1])
+            mask = torch.eye(sim.shape[0],sim.shape[1], device=sim.device)
             mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
 
             loss = - (args.cl_temperature * mean_log_prob_pos).mean()
@@ -97,7 +97,7 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
             return loss
 
         loss_image = contrastive_loss(sim_image)
-        loss_text = contrastive_loss(sim_text)
+        loss_text  = contrastive_loss(sim_text)
         total_loss = (loss_image + loss_text) / 2
 
     return total_loss
@@ -116,6 +116,10 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, tb_writer=None
         if args.gpu is not None:
             loss_img = loss_img.cuda(args.gpu)
             loss_txt = loss_txt.cuda(args.gpu)
+    elif args.loss_type == "FILIP":
+        # TO DO: Make ugly hack nice.
+        loss_img = None
+        loss_txt = None
 
     if args.distributed and sampler is not None:
         sampler.set_epoch(epoch)

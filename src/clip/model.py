@@ -342,7 +342,10 @@ class CLIP(nn.Module):
         return self.visual.conv1.weight.dtype
 
     def encode_image(self, image, args):
-        return self.visual(image.type(self.dtype), args)
+        if args.loss_type == "FILIP":
+            return self.visual(image.type(self.dtype), args)
+        else:
+            return self.visual(image.type(self.dtype))
 
     def encode_text(self, text, args):
         x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
