@@ -58,8 +58,8 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
             all_text_features  = torch.cat(gathered_text_features,  dim=0)
             sim_image = torch.einsum("imd,tnd->itmn", image_features, all_text_features)
             sim_text  = torch.einsum("tnd,imd->tinm", text_features, all_image_features)
-            sim_image = sim.max(dim=3).values.mean(dim=2) # itmn, max: itm, mean: it
-            sim_text  = sim.max(dim=3).values.mean(dim=2) # tinm, max: tin, mean: ti
+            sim_image = sim_image.max(dim=3).values.mean(dim=2) # itmn, max: itm, mean: it
+            sim_text  = sim_text.max(dim=3).values.mean(dim=2) # tinm, max: tin, mean: ti
 
     else:
         if args.loss_type == "CLIP":
