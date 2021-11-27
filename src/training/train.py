@@ -54,13 +54,21 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
             logits_per_text = logits_per_image.t()
 
         elif args.loss_type == "FILIP":
-            image_features = torch.cat(gathered_image_features, dim=0)
-            text_features  = torch.cat(gathered_text_features,  dim=0)
+            all_image_features = torch.cat(gathered_image_features, dim=0)
+            all_text_features  = torch.cat(gathered_text_features,  dim=0)
+            sim_image = torch.einsum("imd,tnd->itmn", image_features, all_text_features)
+            sim_text  = torch.einsum("tnd,imd->tinm", text_features, all_image_features)
+            sim_image = sim.max(dim=3).values.mean(dim=2) # itmn, max: itm, mean: it
+            sim_text  = sim.max(dim=3).values.mean(dim=2) # tinm, max: tin, mean: ti
 
     else:
         if args.loss_type == "CLIP":
             logits_per_image = logit_scale * image_features @ text_features.t()
             logits_per_text = logit_scale * text_features @ image_features.t()
+        elif args.loss_type == "FILIP":
+            sim = torch.einsum("imd,tnd->itmn", image_features, text_features)
+            sim_image = sim.max(dim=3).values.mean(dim=2)   # itmn, max: itm, mean: it
+            sim_text  = sim.max(dim=2).values.mean(dim=2).T # itmn, max: itn, mean: it, transpose: ti
 
     if args.loss_type == "CLIP":
         ground_truth = torch.arange(len(logits_per_image)).long()
@@ -71,12 +79,10 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
             loss_img(logits_per_image, ground_truth)
             + loss_txt(logits_per_text, ground_truth)
         ) / 2
+
     elif args.loss_type == "FILIP":
-        sim = torch.einsum("imd,tnd->itmn", image_features, text_features)
-        sim_image = sim.max(dim=3).values.mean(dim=2)   # itmn, max: itm, mean: it
-        sim_text  = sim.max(dim=2).values.mean(dim=2).T # itmn, max: itn, mean: it, transpose: ti
-        sim_image *= logit_scale
-        sim_text  *= logit_scale
+            sim_image *= logit_scale
+            sim_text  *= logit_scale
 
         def contrastive_loss(sim):
             # Based on: https://github.com/HobbitLong/SupContrast/blob/master/losses.py#L11

@@ -236,6 +236,7 @@ class VisualTransformer(nn.Module):
             x = self.ln_post(x[:, 0, :])
         elif args.loss_type == "FILIP":
             x = self.ln_post(x[:, 1:, :]) # everything but the CLS token
+            return x
 
         if self.proj is not None:
             x = x @ self.proj

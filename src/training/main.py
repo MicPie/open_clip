@@ -198,6 +198,10 @@ def main_worker(gpu, ngpus_per_node, log_queue, args):
         steps = data["train"].dataloader.num_batches * (epoch + 1)
         if args.val_data is not None:
             evaluate(model, data, epoch + 1, args, writer, steps)
+            if args.distributed:
+                # evaluate only uses one GPU, therefore we need a barrier so all GPU wait until eval is finished.
+                # TO DO: This needs also be setup for Horovod.
+                dist.barrier()
 
         # Saving checkpoints.
         if args.save_logs and (args.gpu == 0 or (not args.distributed)):
