@@ -81,8 +81,8 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
         ) / 2
 
     elif args.loss_type == "FILIP":
-            sim_image *= logit_scale
-            sim_text  *= logit_scale
+        sim_image *= logit_scale
+        sim_text  *= logit_scale
 
         def contrastive_loss(sim):
             # Based on: https://github.com/HobbitLong/SupContrast/blob/master/losses.py#L11
