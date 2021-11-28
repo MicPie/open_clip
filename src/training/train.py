@@ -21,7 +21,7 @@ def is_master(args):
     return (not args.distributed) or args.gpu == 0
 
 def get_loss(model, images, texts, loss_img, loss_txt, args):
-    image_features, text_features, logit_scale = model(images, texts, args)
+    image_features, text_features, logit_scale = model(images, texts, args.loss_type)
     logit_scale = logit_scale.mean()
     if args.distributed and args.aggregate:
         world_size = dist.get_world_size()

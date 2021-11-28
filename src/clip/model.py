@@ -218,7 +218,7 @@ class VisualTransformer(nn.Module):
         self.ln_post = LayerNorm(width)
         self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
 
-    def forward(self, x: torch.Tensor, args):
+    def forward(self, x: torch.Tensor, loss_type="CLIP"):
         x = self.conv1(x)  # shape = [*, width, grid, grid]
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
@@ -232,9 +232,9 @@ class VisualTransformer(nn.Module):
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
 
-        if args.loss_type == "CLIP":
+        if loss_type == "CLIP":
             x = self.ln_post(x[:, 0, :])
-        elif args.loss_type == "FILIP":
+        elif loss_type == "FILIP":
             x = self.ln_post(x[:, 1:, :]) # everything but the CLS token
             return x
 
@@ -342,13 +342,13 @@ class CLIP(nn.Module):
     def dtype(self):
         return self.visual.conv1.weight.dtype
 
-    def encode_image(self, image, args):
-        if args.loss_type == "FILIP":
-            return self.visual(image.type(self.dtype), args)
+    def encode_image(self, image, loss_type):
+        if loss_type == "FILIP":
+            return self.visual(image.type(self.dtype), loss_type)
         else:
             return self.visual(image.type(self.dtype))
 
-    def encode_text(self, text, args):
+    def encode_text(self, text, loss_type):
         x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
 
         x = x + self.positional_embedding.type(self.dtype)
@@ -360,21 +360,21 @@ class CLIP(nn.Module):
         x = self.ln_final(x).type(self.dtype)
 
         # x.shape = [batch_size, n_ctx, transformer.width]
-        if args.loss_type == "CLIP":
+        if loss_type == "CLIP":
             # take features from the eot embedding (eot_token is the highest number in each sequence)
             x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_projection
-        elif args.loss_type == "FILIP":
+        elif loss_type == "FILIP":
             x = x @ self.text_projection
             # TO DO: Should we remove EOT token here?
         return x
 
-    def forward(self, image, text, args):
+    def forward(self, image, text, loss_type):
         if image is None:
-            return self.encode_text(text, args)
+            return self.encode_text(text, loss_type)
         elif text is None:
-            return self.encode_image(image, args)
-        image_features = self.encode_image(image, args)
-        text_features = self.encode_text(text, args)
+            return self.encode_image(image, loss_type)
+        image_features = self.encode_image(image, loss_type)
+        text_features = self.encode_text(text, loss_type)
 
         image_features = F.normalize(image_features, p=2, dim=-1)
         text_features  = F.normalize(text_features, p=2, dim=-1)
