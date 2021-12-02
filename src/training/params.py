@@ -175,6 +175,12 @@ def parse_args():
         help="contrastive loss temperature of the FILIP setup (default: 0.07)",
     )
     parser.add_argument(
+        "--gradcache",
+        default=False,
+        type="store_true",
+        help="activate gradient caching for training",
+    )
+    parser.add_argument(
         "--report-to",
         default='',
         type=str,

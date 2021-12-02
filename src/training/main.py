@@ -14,9 +14,11 @@ import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 from torch.cuda.amp import GradScaler
 
+from grad_cache import GradCache
+
 from clip.clip import _transform, load
 from clip.model import convert_weights, CLIP
-from training.train import train, evaluate
+from training.train import train, evaluate, get_loss_gradcache
 from training.data import get_data
 from training.params import parse_args
 from training.logger import setup_primary_logging, setup_worker_logging
@@ -102,6 +104,12 @@ def main_worker(gpu, ngpus_per_node, log_queue, args):
             model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         if args.dp:
             model = torch.nn.DataParallel(model, device_ids=args.multigpu)
+        if args.gradcache:
+            gc = GradCache(
+                    models=[model],
+                    chunk_sizes=2,
+                    loss_fn=get_loss_gradcache,
+                    )
 
         if args.precision == "fp16":
             convert_weights(model)

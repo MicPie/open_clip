@@ -20,6 +20,27 @@ import logging
 def is_master(args):
     return (not args.distributed) or args.gpu == 0
 
+
+def contrastive_loss(sim):
+    """Contrastive loss based on the similarites."""
+    # Based on: https://github.com/HobbitLong/SupContrast/blob/master/losses.py#L11
+
+    # for numerical stability
+    logits_max, _ = torch.max(sim, dim=1, keepdim=True)
+    logits = sim - logits_max.detach()
+    
+    exp_logits = torch.exp(logits)
+    log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+
+    # compute mean of log-likelihood over positive
+    mask = torch.eye(sim.shape[0],sim.shape[1], device=sim.device)
+    mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
+
+    loss = - (args.cl_temperature * mean_log_prob_pos).mean()
+    # TO DO: Check if we need to carry out the entire calculation on every GPU or if we can split it like with the CLASP setup.
+    return loss
+
+
 def get_loss(model, images, texts, loss_img, loss_txt, args):
     image_features, text_features, logit_scale = model(images, texts, args.loss_type)
     logit_scale = logit_scale.mean()
@@ -83,23 +104,74 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
         sim_image *= logit_scale
         sim_text  *= logit_scale
 
-        def contrastive_loss(sim):
-            # Based on: https://github.com/HobbitLong/SupContrast/blob/master/losses.py#L11
+        loss_image = contrastive_loss(sim_image)
+        loss_text  = contrastive_loss(sim_text)
+        total_loss = (loss_image + loss_text) / 2
 
-            # for numerical stability
-            logits_max, _ = torch.max(sim, dim=1, keepdim=True)
-            logits = sim - logits_max.detach()
-            
-            exp_logits = torch.exp(logits)
-            log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+    return total_loss
 
-            # compute mean of log-likelihood over positive
-            mask = torch.eye(sim.shape[0],sim.shape[1], device=sim.device)
-            mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
 
-            loss = - (args.cl_temperature * mean_log_prob_pos).mean()
-            # TO DO: Check if we need to carry out the entire calculation on every GPU or if we can split it like with the CLASP setup.
-            return loss
+def get_loss_gradcache(image_features, text_features, loss_img, loss_txt, args):
+    logit_scale = logit_scale.mean()
+    if args.distributed and args.aggregate:
+        world_size = dist.get_world_size()
+        rank = dist.get_rank()
+
+        # We gather tensors from all gpus to get more negatives to contrast with.
+        gathered_image_features = [
+            torch.zeros_like(image_features) for _ in range(world_size)
+        ]
+        gathered_text_features = [
+            torch.zeros_like(text_features) for _ in range(world_size)
+        ]
+        dist.all_gather(gathered_image_features, image_features)
+        dist.all_gather(gathered_text_features, text_features)
+
+        all_image_features = torch.cat(
+            [image_features]
+            + gathered_image_features[:rank]
+            + gathered_image_features[rank + 1 :]
+        )
+        all_text_features = torch.cat(
+            [text_features]
+            + gathered_text_features[:rank]
+            + gathered_text_features[rank + 1 :]
+        )
+
+        if args.loss_type == "CLIP":
+            # this is needed to send gradients back everywhere.
+            logits_per_image = logit_scale * all_image_features @ all_text_features.t()
+            logits_per_text = logits_per_image.t()
+        elif args.loss_type == "FILIP":
+            all_image_features = torch.cat(gathered_image_features, dim=0)
+            all_text_features  = torch.cat(gathered_text_features,  dim=0)
+            sim_image = torch.einsum("imd,tnd->itmn", image_features, all_text_features)
+            sim_text  = torch.einsum("tnd,imd->tinm", text_features, all_image_features)
+            sim_image = sim_image.max(dim=3).values.mean(dim=2) # itmn, max: itm, mean: it
+            sim_text  = sim_text.max(dim=3).values.mean(dim=2) # tinm, max: tin, mean: ti
+
+    else:
+        if args.loss_type == "CLIP":
+            logits_per_image = logit_scale * image_features @ text_features.t()
+            logits_per_text = logit_scale * text_features @ image_features.t()
+        elif args.loss_type == "FILIP":
+            sim = torch.einsum("imd,tnd->itmn", image_features, text_features)
+            sim_image = sim.max(dim=3).values.mean(dim=2)   # itmn, max: itm, mean: it
+            sim_text  = sim.max(dim=2).values.mean(dim=2).T # itmn, max: itn, mean: it, transpose: ti
+
+    if args.loss_type == "CLIP":
+        ground_truth = torch.arange(len(logits_per_image)).long()
+        if args.gpu is not None:
+            ground_truth = ground_truth.cuda(args.gpu, non_blocking=True)
+
+        total_loss = (
+            loss_img(logits_per_image, ground_truth)
+            + loss_txt(logits_per_text, ground_truth)
+        ) / 2
+
+    elif args.loss_type == "FILIP":
+        sim_image *= logit_scale
+        sim_text  *= logit_scale
 
         loss_image = contrastive_loss(sim_image)
         loss_text  = contrastive_loss(sim_text)
@@ -154,7 +226,9 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, tb_writer=None
                 scaler.scale(total_loss).backward()
                 scaler.step(optimizer)
             scaler.update()
-
+        elif args.gradcache:
+            gc(image_features, text_features, no_sync_except_last=True, loss_img, loss_txt, args)
+            optimizer.step()
         else:
             total_loss = get_loss(model, images, texts, loss_img, loss_txt, args)
             total_loss.backward()
