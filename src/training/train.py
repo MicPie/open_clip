@@ -32,7 +32,7 @@ def contrastive_loss(sim, infoloob=False):
     mask = torch.eye(sim.shape[0], sim.shape[1], device=sim.device)
     if infoloob:
         # with infoloob we don't incorporate the self-similarity in the denominator term
-        exp_logits[mask] = 0
+        exp_logits = exp_logits * (1 - mask)
     log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
 
     # compute mean of log-likelihood over positive
