@@ -175,11 +175,16 @@ def parse_args():
         help="contrastive loss temperature of the FILIP setup (default: 0.07)",
     )
     parser.add_argument(
+        "--cl-infoloob",
+        default=False,
+        action="store_true",
+        help="whether to use InfoLOOB contrastive loss setup (default: False, which equals InfoNCE)"
+    )
+    parser.add_argument(
         "--gradcache",
         default=False,
         type="store_true",
         help="activate gradient caching for training",
-    )
     parser.add_argument(
         "--report-to",
         default='',

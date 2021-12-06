@@ -106,9 +106,8 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
         sim_image *= logit_scale
         sim_text  *= logit_scale
 
-<<<<<<< HEAD
-        loss_image = contrastive_loss(sim_image)
-        loss_text  = contrastive_loss(sim_text)
+        loss_image = contrastive_loss(sim_image, args.cl_infoloob)
+        loss_text  = contrastive_loss(sim_text,  args.cl_infoloob)
         total_loss = (loss_image + loss_text) / 2
 
     return total_loss
@@ -180,6 +179,10 @@ def get_loss_gradcache(image_features, text_features, loss_img, loss_txt, args):
 >>>>>>> bf28920... InfoLOOB flag in InfoNCE loss setup.
         loss_image = contrastive_loss(sim_image)
         loss_text  = contrastive_loss(sim_text)
+=======
+        loss_image = contrastive_loss(sim_image, args.cl_infoloob)
+        loss_text  = contrastive_loss(sim_text,  args.cl_infoloob)
+>>>>>>> 5d9f80f... Adaptions for InfoLOOB flag in InfoNCE loss setup 3.
         total_loss = (loss_image + loss_text) / 2
 
     return total_loss
