@@ -124,8 +124,8 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
         sim_image *= logit_scale
         sim_text  *= logit_scale
 
-        loss_image = contrastive_loss(sim_image)
-        loss_text  = contrastive_loss(sim_text)
+        loss_image = contrastive_loss(sim_image, args.cl_infoloob)
+        loss_text  = contrastive_loss(sim_text,  args.cl_infoloob)
         total_loss = (loss_image + loss_text) / 2
 
     return total_loss
