@@ -27,15 +27,33 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
         world_size = dist.get_world_size()
         rank = dist.get_rank()
 
+        # FILIP top 25% token prep for all gather, corresponding passage from the publication:
+        # for each image (resp. text),
+        # we select the 25% tokens with the highest token-wise maximum similarity score
+        # among all texts (resp. images) in the same local worker before node communication
+        if args.loss_type == "FILIP" and args.filip_top_p_agg:
+            with torch.no_grad():
+                sim = torch.einsum("imd,tnd->itmn", image_features, text_features)
+                image_top_p_indices = sim.max(3).values.max(1).values.\
+                        topk(round(sim.shape[2] * args.filip_top_p_agg)).indices # itmn, max: itm, max: im
+                text_top_p_indices  = sim.permute(1,0,3,2).max(3).values.max(1).values.\
+                        topk(round(sim.shape[3] * args.filip_top_p_agg)).indices # itmn, permute: tinm, max: tin, max: tn
+                # TO DO: Evaluate the usage of text masks to better adapt the number of tokens for aggregation?
+                image_features_allgather = image_features[image_top_p_indices[0], image_top_p_indices[1]]
+                text_features_allgather  = text_features[text_top_p_indices[0], text_top_p_indices[1]]
+        else:
+            image_features_allgather = image_features
+            text_features_allgather  = text_features
+
         # We gather tensors from all gpus to get more negatives to contrast with.
         gathered_image_features = [
-            torch.zeros_like(image_features) for _ in range(world_size)
+            torch.zeros_like(image_features_allgather) for _ in range(world_size)
         ]
         gathered_text_features = [
-            torch.zeros_like(text_features) for _ in range(world_size)
+            torch.zeros_like(text_features_allgather) for _ in range(world_size)
         ]
-        dist.all_gather(gathered_image_features, image_features)
-        dist.all_gather(gathered_text_features, text_features)
+        dist.all_gather(gathered_image_features, image_features_allgather)
+        dist.all_gather(gathered_text_features, text_features_allgather)
 
         all_image_features = torch.cat(
             [image_features]

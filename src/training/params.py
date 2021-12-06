@@ -181,6 +181,12 @@ def parse_args():
         help="Options are ['wandb', 'tensorboard', 'wandb,tensorboard']"
     )
     parser.add_argument(
+        "--filip-top-p-agg",
+        default=None,
+        type=float,
+        help="Top percentage of similarites of the FILIP setup (default: None)",
+    )
+    parser.add_argument(
         "--wandb-notes",
         default='',
         type=str,
