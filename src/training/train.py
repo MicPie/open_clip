@@ -21,19 +21,21 @@ def is_master(args):
     return (not args.distributed) or args.gpu == 0
 
 
-def contrastive_loss(sim):
-    """Contrastive loss based on the similarites."""
+def contrastive_loss(sim, infoloob=False):
     # Based on: https://github.com/HobbitLong/SupContrast/blob/master/losses.py#L11
 
-    # for numerical stability
+    # for numerical stability subtract max in log space which equals division in normal space
     logits_max, _ = torch.max(sim, dim=1, keepdim=True)
     logits = sim - logits_max.detach()
     
     exp_logits = torch.exp(logits)
+    mask = torch.eye(sim.shape[0], sim.shape[1], device=sim.device)
+    if infoloob:
+        # with infoloob we don't incorporate the self-similarity in the denominator term
+        exp_logits[mask] = 0
     log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
 
     # compute mean of log-likelihood over positive
-    mask = torch.eye(sim.shape[0],sim.shape[1], device=sim.device)
     mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
 
     loss = - (args.cl_temperature * mean_log_prob_pos).mean()
@@ -104,6 +106,7 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
         sim_image *= logit_scale
         sim_text  *= logit_scale
 
+<<<<<<< HEAD
         loss_image = contrastive_loss(sim_image)
         loss_text  = contrastive_loss(sim_text)
         total_loss = (loss_image + loss_text) / 2
@@ -173,6 +176,8 @@ def get_loss_gradcache(image_features, text_features, loss_img, loss_txt, args):
         sim_image *= logit_scale
         sim_text  *= logit_scale
 
+=======
+>>>>>>> bf28920... InfoLOOB flag in InfoNCE loss setup.
         loss_image = contrastive_loss(sim_image)
         loss_text  = contrastive_loss(sim_text)
         total_loss = (loss_image + loss_text) / 2
