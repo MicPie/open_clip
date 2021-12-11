@@ -186,6 +186,11 @@ def parse_args():
         type="store_true",
         help="activate gradient caching for training",
     parser.add_argument(
+        "--gradcache-chunksize",
+        default=2,
+        type=int,
+        help="gradient cacheing chunk size (default: 2)",
+    parser.add_argument(
         "--report-to",
         default='',
         type=str,

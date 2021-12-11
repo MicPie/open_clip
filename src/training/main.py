@@ -107,7 +107,7 @@ def main_worker(gpu, ngpus_per_node, log_queue, args):
         if args.gradcache:
             gc = GradCache(
                     models=[model],
-                    chunk_sizes=2,
+                    chunk_sizes=args.gradcache_chunksize,
                     loss_fn=get_loss_gradcache,
                     )
 
