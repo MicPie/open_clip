@@ -5,6 +5,7 @@ import numpy as np
 
 import torch
 import torch.nn as nn
+import torch.profiler
 
 from torch.cuda.amp import autocast
 import torch.distributed as dist
@@ -21,7 +22,7 @@ def is_master(args):
     return (not args.distributed) or args.gpu == 0
 
 
-def contrastive_loss(sim, infoloob=False):
+def contrastive_loss(sim, args):
     # Based on: https://github.com/HobbitLong/SupContrast/blob/master/losses.py#L11
 
     # for numerical stability subtract max in log space which equals division in normal space
@@ -30,7 +31,7 @@ def contrastive_loss(sim, infoloob=False):
     
     exp_logits = torch.exp(logits)
     mask = torch.eye(sim.shape[0], sim.shape[1], device=sim.device)
-    if infoloob:
+    if args.cl_infoloob:
         # with infoloob we don't incorporate the self-similarity in the denominator term
         exp_logits = exp_logits * (1 - mask)
     log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
@@ -106,8 +107,8 @@ def get_loss(model, images, texts, loss_img, loss_txt, args):
         sim_image *= logit_scale
         sim_text  *= logit_scale
 
-        loss_image = contrastive_loss(sim_image, args.cl_infoloob)
-        loss_text  = contrastive_loss(sim_text,  args.cl_infoloob)
+        loss_image = contrastive_loss(sim_image, args)
+        loss_text  = contrastive_loss(sim_text,  args)
         total_loss = (loss_image + loss_text) / 2
 
     return total_loss
@@ -175,8 +176,8 @@ def get_loss_gradcache(image_features, text_features, loss_img, loss_txt, args):
         sim_image *= logit_scale
         sim_text  *= logit_scale
 
-        loss_image = contrastive_loss(sim_image, args.cl_infoloob)
-        loss_text  = contrastive_loss(sim_text,  args.cl_infoloob)
+        loss_image = contrastive_loss(sim_image, args)
+        loss_text  = contrastive_loss(sim_text,  args)
         total_loss = (loss_image + loss_text) / 2
 
     return total_loss
@@ -206,6 +207,17 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, tb_writer=None
     num_batches_per_epoch = dataloader.num_batches
 
     end = time.time()
+
+    if args.tb_profile:
+        prof = torch.profiler.profile(
+                schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(args.tensorboard_path),
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True
+                )
+        prof.start()
+
     for i, batch in enumerate(dataloader):
         step = num_batches_per_epoch * epoch + i
         scheduler(step)
@@ -229,7 +241,7 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, tb_writer=None
                 scaler.step(optimizer)
             scaler.update()
         elif args.gradcache:
-            gc(image_features, text_features, no_sync_except_last=True, loss_img, loss_txt, args)
+            gc(image_features, text_features, no_sync_except_last=True, loss_img=loss_img, loss_txt=loss_txt, args=args)
             optimizer.step()
         else:
             total_loss = get_loss(model, images, texts, loss_img, loss_txt, args)
@@ -238,6 +250,9 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, tb_writer=None
 
         # Note: we clamp to 4.6052 = ln(100), as in the original paper.
         m.logit_scale.data = torch.clamp(m.logit_scale.data, 0, 4.6052)
+
+        if args.tb_profile:
+            prof.step()
 
         batch_time = time.time() - end
         end = time.time()
@@ -268,6 +283,9 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, tb_writer=None
                     tb_writer.add_scalar(name, val, timestep)
                 if args.wandb:
                     wandb.log({name: val, 'step': timestep})
+
+    if args.tb_profile:
+        prof.stop()   
 
 
 def evaluate(model, data, epoch, args, tb_writer=None, steps=None):
