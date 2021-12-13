@@ -183,13 +183,21 @@ def parse_args():
     parser.add_argument(
         "--gradcache",
         default=False,
-        type="store_true",
-        help="activate gradient caching for training",
+        action="store_true",
+        help="activate gradient caching for training"
+    )
     parser.add_argument(
         "--gradcache-chunksize",
         default=2,
         type=int,
         help="gradient cacheing chunk size (default: 2)",
+    )
+    parser.add_argument(
+        "--tb-profile",
+        default=False,
+        action="store_true",
+        help="enable tensorboard profiling",
+    )
     parser.add_argument(
         "--report-to",
         default='',
