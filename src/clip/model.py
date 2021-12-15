@@ -341,13 +341,13 @@ class CLIP(nn.Module):
     def dtype(self):
         return self.visual.conv1.weight.dtype
 
-    def encode_image(self, image, loss_type):
+    def encode_image(self, image, loss_type="CLIP"):
         if loss_type == "FILIP":
             return self.visual(image.type(self.dtype), loss_type)
         else:
             return self.visual(image.type(self.dtype))
 
-    def encode_text(self, text, loss_type):
+    def encode_text(self, text, loss_type="CLIP"):
         x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
 
         x = x + self.positional_embedding.type(self.dtype)
@@ -367,7 +367,7 @@ class CLIP(nn.Module):
             # TO DO: Should we remove EOT token here?
         return x
 
-    def forward(self, image, text, loss_type):
+    def forward(self, image, text, loss_type="CLIP"):
         if image is None:
             return self.encode_text(text, loss_type)
         elif text is None:

@@ -110,6 +110,8 @@ def main_worker(gpu, ngpus_per_node, log_queue, args):
                     chunk_sizes=args.gradcache_chunksize,
                     loss_fn=get_loss_gradcache,
                     )
+        else:
+            gc = None
 
         if args.precision == "fp16":
             convert_weights(model)
@@ -202,7 +204,7 @@ def main_worker(gpu, ngpus_per_node, log_queue, args):
     for epoch in range(start_epoch, args.epochs):
         if args.gpu == 0:
             logging.info(f'Start epoch {epoch}')
-        train(model, data, epoch, optimizer, scaler, scheduler, args, writer)
+        train(model, data, epoch, optimizer, scaler, scheduler, args, gc, writer)
         steps = data["train"].dataloader.num_batches * (epoch + 1)
         if args.val_data is not None:
             evaluate(model, data, epoch + 1, args, writer, steps)

@@ -183,7 +183,7 @@ def get_loss_gradcache(image_features, text_features, loss_img, loss_txt, args):
     return total_loss
 
 
-def train(model, data, epoch, optimizer, scaler, scheduler, args, tb_writer=None):
+def train(model, data, epoch, optimizer, scaler, scheduler, args, gc=None, tb_writer=None):
     os.environ["WDS_EPOCH"] = str(epoch)
     
     model.train()
@@ -236,15 +236,20 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, tb_writer=None
         # with automatic mixed precision.
         if args.precision == "amp":
             with autocast():
-                total_loss = get_loss(model, images, texts, loss_img, loss_txt, args)
+                if args.gradcache:
+                    #total_loss = gc(([images, texts], {"loss_type": args.loss_type}), no_sync_except_last=True, loss_img=loss_img, loss_txt=loss_txt, args=args)
+                    total_loss = gc([images, texts], no_sync_except_last=True, loss_img=loss_img, loss_txt=loss_txt, args=args)
+                else:
+                    total_loss = get_loss(model, images, texts, loss_img, loss_txt, args)
                 scaler.scale(total_loss).backward()
                 scaler.step(optimizer)
             scaler.update()
-        elif args.gradcache:
-            gc(image_features, text_features, no_sync_except_last=True, loss_img=loss_img, loss_txt=loss_txt, args=args)
-            optimizer.step()
         else:
-            total_loss = get_loss(model, images, texts, loss_img, loss_txt, args)
+            if args.gradcache:
+                #total_loss = gc(([images, texts], {"loss_type": args.loss_type}), no_sync_except_last=True, loss_img=loss_img, loss_txt=loss_txt, args=args)
+                total_loss = gc([images, texts], no_sync_except_last=True, loss_img=loss_img, loss_txt=loss_txt, args=args)
+            else:
+                total_loss = get_loss(model, images, texts, loss_img, loss_txt, args)
             total_loss.backward()
             optimizer.step()
 
